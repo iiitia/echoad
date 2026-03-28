@@ -1,14 +1,21 @@
+
 import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
+import os
 import joblib
 import pandas as pd
 import numpy as np
 
-# ── Load model and encoders ───────────────────────────────────────────────────
-model = joblib.load("model.pkl")
-device_encoder, category_encoder, catdev_encoder = joblib.load("encoder.pkl")
+# ✅ Get correct path (works locally + Render)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+model_path = os.path.join(BASE_DIR, "model.pkl")
+encoder_path = os.path.join(BASE_DIR, "encoder.pkl")
+
+# ✅ Load files
+model = joblib.load(model_path)
+device_encoder, category_encoder, catdev_encoder = joblib.load(encoder_path)
 print("[OK] model.pkl and encoder.pkl loaded successfully")
 
 # ── Safe label encoder helper ─────────────────────────────────────────────────
