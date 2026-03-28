@@ -17,7 +17,7 @@ env/
 
 # Model files (ML)
 
-*.pkl
+
 *.joblib
 
 # Logs
