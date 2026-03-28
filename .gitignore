@@ -1,0 +1,52 @@
+# Python cache
+
+**pycache**/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+
+venv/
+env/
+.venv/
+
+# Environment variables
+
+.env
+
+# Model files (ML)
+
+*.pkl
+*.joblib
+
+# Logs
+
+*.log
+
+# OS files
+
+.DS_Store
+Thumbs.db
+
+# VS Code
+
+.vscode/
+
+# Jupyter Notebook
+
+.ipynb_checkpoints/
+
+# Node modules (frontend)
+
+node_modules/
+
+# Build files (frontend)
+
+dist/
+build/
+
+# Temporary files
+
+*.tmp
+*.swp
