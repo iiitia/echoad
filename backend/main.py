@@ -98,7 +98,7 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("PORT", 10000))  # Render uses $PORT
+    port = int(os.environ.get("PORT", 10000))
 
     uvicorn.run(
         "main:app",
