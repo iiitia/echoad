@@ -1,12 +1,12 @@
 import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
-import os
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+# ✅ Correct imports (important for Render)
 from backend.producer import producer
 from backend.consumer import consumer
 
@@ -26,7 +26,6 @@ async def lifespan(app: FastAPI):
     yield
 
     print("🛑 Backend shutting down...")
-
     producer_task.cancel()
     consumer_task.cancel()
 
@@ -71,7 +70,7 @@ async def stats():
         "queue_size": queue.qsize(),
     }
 
-# ── WebSocket (FIXED) ─────────────────────────────────────────
+# ── WebSocket ─────────────────────────────────────────────────
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -81,7 +80,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            # keep connection alive by receiving ping
+            # Receive ping from frontend to keep connection alive
             await websocket.receive_text()
 
     except WebSocketDisconnect:
@@ -93,16 +92,3 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         clients.discard(websocket)
         print(f"[INFO] Client removed | Total: {len(clients)}")
-
-# ── Entry point (Render compatible) ───────────────────────────
-if __name__ == "__main__":
-    import uvicorn
-
-    port = int(os.environ.get("PORT", 10000))
-
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=port,
-        log_level="info"
-    )
