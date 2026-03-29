@@ -8,38 +8,79 @@ import {
   ResponsiveContainer,
   Tooltip
 } from 'recharts'
+// ─── WebSocket URL ─────────────────────────────────────────
+const WS_URL =
+  window.location.hostname === "localhost"
+    ? "ws://127.0.0.1:8000/ws"   // ✅ FIXED (10000 → 8000)
+    : "wss://echoad.onrender.com/ws";
 
-// ─── WebSocket hook with exponential backoff ──────────────────────────────────
-function useWebSocket(url, onMessage) {
+
+// ─── WebSocket hook ───────────────────────────────────────
+function useWebSocket(url, onMessage) {   // ✅ FIXED (proper function)
   const [status, setStatus] = useState('disconnected')
   const wsRef = useRef(null)
   const retryRef = useRef(null)
+  const pingRef = useRef(null)
   const retryCount = useRef(0)
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
-    setStatus('connecting')
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    setStatus('connecting');
+
+    console.log("🔌 Connecting to:", url);
+
     try {
-      const ws = new WebSocket(url)
-      wsRef.current = ws
-      ws.onopen = () => { setStatus('connected'); retryCount.current = 0 }
-      ws.onmessage = (e) => { try { onMessage(JSON.parse(e.data)) } catch {} }
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("✅ Connected");
+        setStatus('connected');
+        retryCount.current = 0;
+
+        pingRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send("ping");
+          }
+        }, 30000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          onMessage(data);
+        } catch {
+          console.log("📩 Raw:", event.data);
+        }
+      };
+
       ws.onclose = () => {
-        setStatus('disconnected')
-        const delay = Math.min(1000 * 2 ** retryCount.current, 30000)
-        retryCount.current++
-        retryRef.current = setTimeout(connect, delay)
-      }
-      ws.onerror = () => { setStatus('error'); ws.close() }
-    } catch { setStatus('error') }
-  }, [url, onMessage])
+        console.log("🔌 Disconnected");
+        setStatus('disconnected');
+      };
+
+      ws.onerror = (err) => {
+        console.log("❌ WebSocket error", err);
+        setStatus('error');
+      };
+
+    } catch (err) {
+      console.log("❌ Connection failed:", err);
+      setStatus('error');
+    }
+  }, [url, onMessage]);
 
   useEffect(() => {
-    connect()
-    return () => { clearTimeout(retryRef.current); wsRef.current?.close() }
-  }, [connect])
+    connect();
+    return () => {
+      clearInterval(pingRef.current);
+      clearTimeout(retryRef.current);
+      wsRef.current?.close();
+    };
+  }, [connect]);
 
-  return { status, reconnect: connect }
+  return { status, reconnect: connect };
 }
 
 // ─── Sparkline SVG ────────────────────────────────────────────────────────────
@@ -304,7 +345,7 @@ export default function App() {
     }
   }, [])
 
-  const { status, reconnect } = useWebSocket('ws://localhost:8000/ws', pushAd)
+  const { status, reconnect } = useWebSocket(WS_URL, pushAd)
 
   useEffect(() => {
     if (!useDemo) return
