@@ -9,37 +9,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from producer import producer
 from consumer import consumer
 
-# ── Lifespan (startup / shutdown) ─────────────────────────────
+# ── Lifespan ───────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Move shared state into app.state to avoid module-level event loop issues
-    app.state.queue = asyncio.Queue()
+    app.state.queue   = asyncio.Queue()
     app.state.clients = set()
+    # ✅ Ring buffer — last 20 ads for polling clients
+    app.state.recent_ads = []
 
     producer_task = asyncio.create_task(producer(app.state.queue))
-    consumer_task = asyncio.create_task(consumer(app.state.queue, app.state.clients))
+    consumer_task = asyncio.create_task(consumer(app.state.queue, app.state.clients, app.state.recent_ads))
 
     print("✅ Backend started")
-    print("🌐 WebSocket endpoint: /ws")
-
+    print("🌐 WebSocket: /ws  |  Polling: /ads")
     yield
 
-    print("🛑 Backend shutting down...")
+    print("🛑 Shutting down...")
     producer_task.cancel()
     consumer_task.cancel()
-
     try:
         await asyncio.gather(producer_task, consumer_task, return_exceptions=True)
     except Exception:
         pass
 
-# ── App ───────────────────────────────────────────────────────
-app = FastAPI(
-    title="EchoAd - Real-Time Ad Bidding Simulator",
-    lifespan=lifespan
-)
+# ── App ────────────────────────────────────────────────────────
+app = FastAPI(title="EchoAd - Real-Time Ad Bidding Simulator", lifespan=lifespan)
 
-# ── CORS ──────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -48,15 +43,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── HTTP Routes ───────────────────────────────────────────────
+# ── HTTP Routes ────────────────────────────────────────────────
 @app.get("/")
 async def root(request: Request):
     return {
-        "status": "running",
+        "status":  "running",
         "message": "EchoAd Backend is live",
         "websocket": "/ws",
+        "polling":   "/ads",
         "clients": len(request.app.state.clients),
-        "queue": request.app.state.queue.qsize(),
+        "queue":   request.app.state.queue.qsize(),
     }
 
 @app.get("/health")
@@ -64,17 +60,27 @@ async def health(request: Request):
     return {
         "status": "ok",
         "connected_clients": len(request.app.state.clients),
-        "queue_size": request.app.state.queue.qsize(),
+        "queue_size":        request.app.state.queue.qsize(),
     }
 
 @app.get("/stats")
 async def stats(request: Request):
     return {
         "connected_clients": len(request.app.state.clients),
-        "queue_size": request.app.state.queue.qsize(),
+        "queue_size":        request.app.state.queue.qsize(),
     }
 
-# ── WebSocket ─────────────────────────────────────────────────
+# ✅ Polling endpoint — returns last N ads
+@app.get("/ads")
+async def get_ads(request: Request, limit: int = 5):
+    recent = request.app.state.recent_ads
+    return {
+        "ads":   recent[-limit:],
+        "count": len(recent),
+        "mode":  "polling"
+    }
+
+# ── WebSocket ──────────────────────────────────────────────────
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -85,31 +91,19 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            # receive() handles text, binary, ping/pong, and disconnect
-            # without crashing on non-text frames like receive_text() does
             data = await websocket.receive()
             if data["type"] == "websocket.disconnect":
                 break
-
     except WebSocketDisconnect:
         print("[INFO] Client disconnected normally")
-
     except Exception as e:
         print(f"[ERROR] WebSocket error: {type(e).__name__}: {e}")
-
     finally:
         clients.discard(websocket)
         print(f"[INFO] Client removed | Total: {len(clients)}")
 
-# ── Entry point ───────────────────────────────────────────────
+# ── Entry point ────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-
     port = int(os.environ.get("PORT", 10000))
-
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=port,
-        log_level="info"
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")
