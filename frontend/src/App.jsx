@@ -9,79 +9,98 @@ import {
   Tooltip
 } from 'recharts'
 
-// ─── WebSocket URL ─────────────────────────────────────────
-const WS_URL = "wss://echoad.onrender.com/ws";
+// ─── WebSocket URL ─────────────────────────────────────────────────────────────
+// ✅ FIXED: define as a constant string, NOT as `new WebSocket(...)` at module level
+const WS_URL = "wss://echoad.onrender.com/ws"
 
-// ─── WebSocket hook ───────────────────────────────────────
-function useWebSocket(url, onMessage) {  
+// ─── WebSocket hook ────────────────────────────────────────────────────────────
+function useWebSocket(url, onMessage) {
   const [status, setStatus] = useState('disconnected')
-  const wsRef = useRef(null)
-  const retryRef = useRef(null)
-  const pingRef = useRef(null)
+  const wsRef      = useRef(null)
+  const retryRef   = useRef(null)
+  const pingRef    = useRef(null)
   const retryCount = useRef(0)
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    // Don't open a second connection if already open
+    if (wsRef.current?.readyState === WebSocket.OPEN) return
 
-    setStatus('connecting');
-
-    console.log("Connecting...");
+    // Clear any pending retry timer
+    clearTimeout(retryRef.current)
+    setStatus('connecting')
+    console.log("🔌 Connecting to:", url)
 
     try {
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
+      const ws = new WebSocket(url)
+      wsRef.current = ws
 
       ws.onopen = () => {
-        console.log("Connected");
-        setStatus('connected');
-        retryCount.current = 0;
+        console.log("✅ Connected")
+        setStatus('connected')
+        retryCount.current = 0
 
+        // ✅ Keep-alive ping every 30s
+        clearInterval(pingRef.current)
         pingRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send("ping");
+            ws.send("ping")
           }
-        }, 30000);
-      };
+        }, 30000)
+      }
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
-          onMessage(data);
+          const data = JSON.parse(event.data)
+          onMessage(data)
         } catch {
-          console.log("📩 Raw:", event.data);
+          console.log("📩 Non-JSON message:", event.data)
         }
-      };
+      }
 
-      ws.onclose = () => {
-        console.log("Disconnected");
-        setStatus('disconnected');
-        clearInterval(pingRef.current);
-      };
+      ws.onclose = (e) => {
+        console.log(`🔌 Disconnected — code: ${e.code}, reason: "${e.reason}"`)
+        setStatus('disconnected')
+        clearInterval(pingRef.current)
+
+        // ✅ Auto-retry with exponential backoff (max 30s)
+        const delay = Math.min(1000 * 2 ** retryCount.current, 30000)
+        retryCount.current += 1
+        console.log(`🔁 Retrying in ${delay / 1000}s (attempt ${retryCount.current})`)
+        retryRef.current = setTimeout(connect, delay)
+      }
 
       ws.onerror = (err) => {
-        console.log("❌ WebSocket error", err);
-        setStatus('error');
-      };
+        console.error("❌ WebSocket error", err)
+        setStatus('error')
+        // onclose fires automatically after onerror, retry handled there
+      }
 
     } catch (err) {
-      console.log("❌ Connection failed:", err);
-      setStatus('error');
+      console.error("❌ Connection failed:", err)
+      setStatus('error')
     }
-  }, [url, onMessage]);
+  }, [url, onMessage])
 
   useEffect(() => {
-    connect();
+    connect()
     return () => {
-      clearInterval(pingRef.current);
-      clearTimeout(retryRef.current);
-      wsRef.current?.close();
-    };
-  }, [connect]);
+      // ✅ Full cleanup on unmount
+      clearInterval(pingRef.current)
+      clearTimeout(retryRef.current)
+      retryCount.current = 999 // prevent retry after unmount
+      wsRef.current?.close()
+    }
+  }, [connect])
 
-  return { status, reconnect: connect };
+  const reconnect = useCallback(() => {
+    retryCount.current = 0
+    wsRef.current?.close()
+  }, [])
+
+  return { status, reconnect }
 }
 
-// ─── Sparkline SVG ────────────────────────────────────────────────────────────
+// ─── Sparkline SVG ─────────────────────────────────────────────────────────────
 function Sparkline({ data, color = '#00e5ff', height = 40 }) {
   if (data.length < 2) return null
   const w = 200, h = height
@@ -110,7 +129,7 @@ function Sparkline({ data, color = '#00e5ff', height = 40 }) {
   )
 }
 
-// ─── Mini donut chart ─────────────────────────────────────────────────────────
+// ─── Mini donut chart ──────────────────────────────────────────────────────────
 function Donut({ pct, color, size = 56 }) {
   const r = 20, cx = 28, cy = 28
   const circ = 2 * Math.PI * r
@@ -125,7 +144,7 @@ function Donut({ pct, color, size = 56 }) {
   )
 }
 
-// ─── Score badge ──────────────────────────────────────────────────────────────
+// ─── Score badge ───────────────────────────────────────────────────────────────
 function ScoreBadge({ score }) {
   const s = typeof score === 'number' ? score : 0
   if (s > 0.7) return (
@@ -148,7 +167,7 @@ function ScoreBadge({ score }) {
   )
 }
 
-// ─── Heatmap: category x device ──────────────────────────────────────────────
+// ─── Heatmap ───────────────────────────────────────────────────────────────────
 const CATS = ['Finance', 'Gaming', 'News', 'Travel', 'Tech', 'Health']
 const DEVS = ['Mobile', 'Desktop', 'Tablet']
 
@@ -199,7 +218,7 @@ function Heatmap({ ads }) {
   )
 }
 
-// ─── Live CTR Chart ───────────────────────────────────────────────────────────
+// ─── Live CTR Chart ────────────────────────────────────────────────────────────
 function LiveCTRChart({ data }) {
   return (
     <div className="stat-card" style={{ height: 300, borderColor: 'rgba(0,176,255,0.2)' }}>
@@ -209,45 +228,22 @@ function LiveCTRChart({ data }) {
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 10, right: 20, left: -10, bottom: 10 }}>
           <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.03)" strokeDasharray="3 3" />
-          <XAxis
-            dataKey="timestamp"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fontSize: 11, fontFamily: 'Share Tech Mono, monospace', fill: '#546e7a' }}
-            tickMargin={8}
-          />
-          <YAxis
-            axisLine={false}
-            tickLine={false}
-            tick={{ fontSize: 11, fontFamily: 'Share Tech Mono, monospace', fill: '#546e7a' }}
-            tickMargin={8}
-            domain={[0, 1]}
-          />
+          <XAxis dataKey="timestamp" axisLine={false} tickLine={false}
+            tick={{ fontSize: 11, fontFamily: 'Share Tech Mono, monospace', fill: '#546e7a' }} tickMargin={8} />
+          <YAxis axisLine={false} tickLine={false}
+            tick={{ fontSize: 11, fontFamily: 'Share Tech Mono, monospace', fill: '#546e7a' }} tickMargin={8} domain={[0, 1]} />
           <Tooltip
-            contentStyle={{
-              background: '#0d1221',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 8,
-              fontFamily: 'Share Tech Mono, monospace'
-            }}
-            labelStyle={{ color: '#00b0ff' }}
-            itemStyle={{ color: '#b0bec5' }}
-          />
-          <Line
-            type="monotone"
-            dataKey="score"
-            stroke="#00b0ff"
-            strokeWidth={2}
-            dot={{ fill: '#00b0ff', strokeWidth: 1 }}
-            activeDot={{ r: 6, strokeWidth: 2 }}
-          />
+            contentStyle={{ background: '#0d1221', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'Share Tech Mono, monospace' }}
+            labelStyle={{ color: '#00b0ff' }} itemStyle={{ color: '#b0bec5' }} />
+          <Line type="monotone" dataKey="score" stroke="#00b0ff" strokeWidth={2}
+            dot={{ fill: '#00b0ff', strokeWidth: 1 }} activeDot={{ r: 6, strokeWidth: 2 }} />
         </LineChart>
       </ResponsiveContainer>
     </div>
   )
 }
 
-// ─── Velocity Gauge ───────────────────────────────────────────────────────────
+// ─── Velocity Gauge ────────────────────────────────────────────────────────────
 function VelocityGauge({ ratePerMin }) {
   const max = 60, pct = Math.min(ratePerMin / max, 1)
   const angle = -135 + pct * 270
@@ -270,14 +266,14 @@ function VelocityGauge({ ratePerMin }) {
   )
 }
 
-// ─── Toast alerts ─────────────────────────────────────────────────────────────
+// ─── Toast alerts ──────────────────────────────────────────────────────────────
 function Toast({ toasts }) {
   return (
     <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 280 }}>
       {toasts.map(t => (
         <div key={t.id} style={{
-          background: '#0a1f14', border: '1px solid #00e676',
-          borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#00e676',
+          background: '#0a1f14', border: '1px solid #00e676', borderRadius: 8,
+          padding: '10px 14px', fontSize: 12, color: '#00e676',
           fontFamily: 'Share Tech Mono, monospace', boxShadow: '0 0 24px rgba(0,230,118,0.15)',
           animation: 'toastIn 0.3s ease'
         }}>
@@ -289,7 +285,7 @@ function Toast({ toasts }) {
   )
 }
 
-// ─── Demo data generator ──────────────────────────────────────────────────────
+// ─── Demo data generator ───────────────────────────────────────────────────────
 const ALL_CATS = ['Finance', 'Gaming', 'News', 'Travel', 'Tech', 'Health']
 const ALL_DEVS = ['Mobile', 'Desktop', 'Tablet']
 
@@ -304,28 +300,28 @@ function generateAd() {
   }
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+// ─── App ───────────────────────────────────────────────────────────────────────
 const MAX_ADS = 100
 
 export default function App() {
-  const [ads, setAds] = useState([])
+  const [ads, setAds]                 = useState([])
   const [scoreHistory, setScoreHistory] = useState([])
-  const [filter, setFilter] = useState('all')
-  const [toasts, setToasts] = useState([])
-  const [newId, setNewId] = useState(null)
-  const [activeTab, setActiveTab] = useState('feed')
-  const [bidsPerMin, setBidsPerMin] = useState(0)
-  const [useDemo, setUseDemo] = useState(false)
+  const [filter, setFilter]           = useState('all')
+  const [toasts, setToasts]           = useState([])
+  const [newId, setNewId]             = useState(null)
+  const [activeTab, setActiveTab]     = useState('feed')
+  const [bidsPerMin, setBidsPerMin]   = useState(0)
+  const [useDemo, setUseDemo]         = useState(false)
   const [showHighValue, setShowHighValue] = useState(false)
   const bidTimestamps = useRef([])
 
   const pushAd = useCallback((raw) => {
     const ad = {
-      ad_id: raw.ad_id ?? `#${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+      ad_id:     raw.ad_id     ?? `#${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
       timestamp: raw.timestamp ?? new Date().toISOString(),
-      score: typeof raw.score === 'number' ? raw.score : 0,
-      category: raw.category ?? 'Unknown',
-      device: raw.device ?? 'Unknown',
+      score:     typeof raw.score === 'number' ? raw.score : 0,
+      category:  raw.category  ?? 'Unknown',
+      device:    raw.device    ?? 'Unknown',
     }
     setAds(prev => [ad, ...prev].slice(0, MAX_ADS))
     setScoreHistory(prev => [...prev, ad.score].slice(-50))
@@ -343,6 +339,7 @@ export default function App() {
     }
   }, [])
 
+  // ✅ FIXED: WS_URL is now properly defined above, no more ReferenceError
   const { status, reconnect } = useWebSocket(WS_URL, pushAd)
 
   useEffect(() => {
@@ -353,17 +350,17 @@ export default function App() {
 
   const metrics = useMemo(() => {
     const total = ads.length
-    const high = ads.filter(a => a.score > 0.7).length
-    const low = ads.filter(a => a.score < 0.3).length
-    const avg = total ? ads.reduce((s, a) => s + a.score, 0) / total : 0
+    const high  = ads.filter(a => a.score > 0.7).length
+    const low   = ads.filter(a => a.score < 0.3).length
+    const avg   = total ? ads.reduce((s, a) => s + a.score, 0) / total : 0
     const highRate = total ? (high / total) * 100 : 0
     return { total, high, low, avg, highRate }
   }, [ads])
 
   const filtered = useMemo(() => {
     if (filter === 'high') return ads.filter(a => a.score > 0.7)
-    if (filter === 'mid') return ads.filter(a => a.score >= 0.3 && a.score <= 0.7)
-    if (filter === 'low') return ads.filter(a => a.score < 0.3)
+    if (filter === 'mid')  return ads.filter(a => a.score >= 0.3 && a.score <= 0.7)
+    if (filter === 'low')  return ads.filter(a => a.score < 0.3)
     return ads
   }, [ads, filter])
 
@@ -375,9 +372,7 @@ export default function App() {
   , [ads])
 
   const tableAds = useMemo(() =>
-    showHighValue
-      ? filtered.filter(ad => (ad.score ?? 0) > 0.4)
-      : filtered
+    showHighValue ? filtered.filter(ad => (ad.score ?? 0) > 0.4) : filtered
   , [filtered, showHighValue])
 
   const isLive = status === 'connected' || useDemo
@@ -434,7 +429,7 @@ export default function App() {
 
       <div style={{ minHeight: '100vh', padding: '18px 20px', maxWidth: 1180, margin: '0 auto' }}>
 
-        {/* ── Header ──────────────────────────────────────────────────────────── */}
+        {/* ── Header ── */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}>
           <h1 style={{ fontSize: 20, fontWeight: 700, color: '#00b0ff', letterSpacing: '0.14em', textTransform: 'uppercase', fontFamily: 'Rajdhani, sans-serif' }}>
             Echo-Ad Dashboard
@@ -457,17 +452,14 @@ export default function App() {
           </div>
         </div>
 
-        {/* ── Stats Row ───────────────────────────────────────────────────────── */}
+        {/* ── Stats Row ── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 14 }}>
-
-          {/* Total */}
           <div className="stat-card">
             <div style={{ fontSize: 11, color: '#78909c', letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'Share Tech Mono, monospace', marginBottom: 8, fontWeight: 600 }}>Total Ads Processed</div>
             <div style={{ fontSize: 34, fontWeight: 700, color: '#eceff1', fontFamily: 'Share Tech Mono, monospace', lineHeight: 1 }}>{metrics.total.toLocaleString()}</div>
             <div style={{ marginTop: 12, height: 38 }}><Sparkline data={scoreHistory} color="#546e7a" height={38} /></div>
           </div>
 
-          {/* High Value */}
           <div className="stat-card" style={{ borderColor: 'rgba(0,230,118,0.18)' }}>
             <div style={{ fontSize: 11, color: '#4caf50', letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'Share Tech Mono, monospace', marginBottom: 8, fontWeight: 600 }}>High Value Ads (&gt;0.70)</div>
             <div style={{ fontSize: 34, fontWeight: 700, color: '#00e676', fontFamily: 'Share Tech Mono, monospace', lineHeight: 1 }}>{metrics.high.toLocaleString()}</div>
@@ -477,20 +469,17 @@ export default function App() {
             </div>
           </div>
 
-          {/* Avg CTR */}
           <div className="stat-card">
             <div style={{ fontSize: 11, color: '#78909c', letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'Share Tech Mono, monospace', marginBottom: 8, fontWeight: 600 }}>Avg CTR Score</div>
             <div style={{ fontSize: 34, fontWeight: 700, color: '#00b0ff', fontFamily: 'Share Tech Mono, monospace', lineHeight: 1 }}>{metrics.avg.toFixed(3)}</div>
             <div style={{ marginTop: 12, height: 38 }}><Sparkline data={scoreHistory} color="#00b0ff" height={38} /></div>
           </div>
 
-          {/* Velocity Gauge */}
           <div className="stat-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ fontSize: 11, color: '#78909c', letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'Share Tech Mono, monospace', marginBottom: 6, textAlign: 'center', fontWeight: 600 }}>Auction Velocity</div>
             <VelocityGauge ratePerMin={bidsPerMin} />
           </div>
 
-          {/* Low Value */}
           <div className="stat-card" style={{ borderColor: 'rgba(255,82,82,0.12)' }}>
             <div style={{ fontSize: 11, color: '#ef9a9a', letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'Share Tech Mono, monospace', marginBottom: 8, fontWeight: 600 }}>Low Value Ads (&lt;0.30)</div>
             <div style={{ fontSize: 34, fontWeight: 700, color: '#ff5252', fontFamily: 'Share Tech Mono, monospace', lineHeight: 1 }}>{metrics.low.toLocaleString()}</div>
@@ -501,28 +490,23 @@ export default function App() {
               </span>
             </div>
           </div>
-
         </div>
 
-        {/* ── CTR Chart ───────────────────────────────────────────────────────── */}
+        {/* ── CTR Chart ── */}
         <div style={{ marginBottom: 14 }}>
           <LiveCTRChart data={chartData} />
         </div>
 
-        {/* ── Main Panel ──────────────────────────────────────────────────────── */}
+        {/* ── Main Panel ── */}
         <div className="panel">
-
-          {/* Panel header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 18px', borderBottom: '1px solid rgba(255,255,255,0.04)', flexWrap: 'wrap', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span className="blink" style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5252', display: 'inline-block', boxShadow: '0 0 7px #ff5252' }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: '#00b0ff', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Live Ad Auction Feed</span>
             </div>
-
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
               <button className={`tab-btn ${activeTab === 'feed' ? 'active' : ''}`} onClick={() => setActiveTab('feed')}>Feed</button>
               <button className={`tab-btn ${activeTab === 'heatmap' ? 'active' : ''}`} onClick={() => setActiveTab('heatmap')}>Heatmap</button>
-
               {activeTab === 'feed' && (
                 <>
                   <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
@@ -532,10 +516,7 @@ export default function App() {
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 8 }}>
                     <span style={{ fontSize: 11, color: '#546e7a', fontFamily: 'Share Tech Mono, monospace', fontWeight: 600 }}>Table:</span>
-                    <button
-                      className={`chip ${showHighValue ? 'active' : ''}`}
-                      onClick={() => setShowHighValue(v => !v)}
-                    >
+                    <button className={`chip ${showHighValue ? 'active' : ''}`} onClick={() => setShowHighValue(v => !v)}>
                       {showHighValue ? 'High Value Only' : 'All Scores'}
                     </button>
                   </div>
@@ -544,7 +525,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Panel body */}
           <div style={{ padding: activeTab === 'heatmap' ? '18px 22px' : 0, minHeight: 280 }}>
             {activeTab === 'heatmap' ? (
               <Heatmap ads={ads} />
@@ -553,11 +533,7 @@ export default function App() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Ad ID</th>
-                      <th>Time</th>
-                      <th>Category</th>
-                      <th>Device</th>
-                      <th>CTR Score</th>
+                      <th>Ad ID</th><th>Time</th><th>Category</th><th>Device</th><th>CTR Score</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -590,17 +566,12 @@ export default function App() {
             )}
           </div>
 
-          {/* Panel footer */}
           <div style={{ padding: '8px 18px', borderTop: '1px solid rgba(255,255,255,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-            <span style={{ fontSize: 11, color: '#37474f', fontFamily: 'Share Tech Mono, monospace' }}>
-              Showing {tableAds.length} / {ads.length} records
-            </span>
-            <span style={{ fontSize: 11, color: '#37474f', fontFamily: 'Share Tech Mono, monospace' }}>
-              Buffer: {ads.length}/{MAX_ADS}
-            </span>
+            <span style={{ fontSize: 11, color: '#37474f', fontFamily: 'Share Tech Mono, monospace' }}>Showing {tableAds.length} / {ads.length} records</span>
+            <span style={{ fontSize: 11, color: '#37474f', fontFamily: 'Share Tech Mono, monospace' }}>Buffer: {ads.length}/{MAX_ADS}</span>
           </div>
-
         </div>
+
       </div>
     </>
   )
