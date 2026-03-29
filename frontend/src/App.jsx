@@ -9,11 +9,8 @@ import {
   Tooltip
 } from 'recharts'
 // ─── WebSocket URL ─────────────────────────────────────────
-const WS_URL =
-  window.location.hostname === "localhost"
-    ? "ws://127.0.0.1:8000/ws"   // ✅ FIXED (10000 → 8000)
-    : "wss://echoad.onrender.com/ws";
-
+const wsUrl = import.meta.env?.VITE_WS_URL
+  || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
 
 // ─── WebSocket hook ───────────────────────────────────────
 function useWebSocket(url, onMessage) {   // ✅ FIXED (proper function)
