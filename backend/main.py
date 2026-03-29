@@ -7,8 +7,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 # ✅ Correct imports (important for Render)
-from backend.producer import producer
-from backend.consumer import consumer
+from producer import producer
+from consumer import consumer
 
 # ── Shared state ──────────────────────────────────────────────
 queue = asyncio.Queue()
