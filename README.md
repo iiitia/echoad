@@ -1,64 +1,35 @@
-# ⚡ EchoAd — Real-Time Ad Auction Simulator
+# EchoAd — Real-Time Ad Bidding Simulator
 
-> End-to-end ML pipeline for Click-Through Rate (CTR) prediction, streamed live to a React dashboard.
+A full-stack real-time ad bidding pipeline built for the EchoAd technical assessment. Fake ad requests are generated every 2 seconds, scored by a Scikit-Learn ML model, and streamed live to a React dashboard via WebSockets.
+
+🔗 **Live Frontend:** [echoad.vercel.app](https://echoad.vercel.app)  
+🔗 **Backend API:** [echoad.onrender.com](https://echoad.onrender.com)  
+🔗 **WebSocket:** `wss://echoad.onrender.com/ws`
 
 ---
 
-## Architecture Overview
+## What I Built
+
+### The Pipeline (How data flows)
 
 ```
-generate_data.py → ad_logs.csv → model.py → model.pkl + encoder.pkl
-                                                       ↓
-producer.py → asyncio.Queue → consumer.py (ML inference) → WebSocket → React Dashboard
+Producer (every 2s)
+    │
+    ▼
+asyncio.Queue  ──►  Consumer + ML Model (predict_ctr)
+                         │
+                         ▼
+                   WebSocket /ws
+                         │
+                         ▼
+                 React Dashboard (Vercel)
 ```
 
----
+1. **Producer** generates a fake ad request JSON every 2 seconds and pushes it onto an `asyncio.Queue`
+2. **Consumer** pulls from the queue, runs the ad through the trained ML model, gets a CTR score (0.0 → 1.0), stores it in a ring buffer, and broadcasts it to all connected WebSocket clients
+3. **Frontend** receives the scored ad in real time and displays it on the live dashboard
 
-## Infrastructure Decision: Kafka → asyncio.Queue
-
-This project was architected for **Apache Kafka** as the messaging backbone. During setup, Kafka encountered Docker port binding conflicts on the local environment.
-
-Per the assignment brief's approved fallback guidelines, the pipeline was **refactored to Python's `asyncio.Queue` (Fallback B)** — running producer and consumer as FastAPI background tasks within the same process.
-
-This fallback:
-- Preserves the **exact producer-consumer architecture** Kafka would provide
-- Maintains **decoupled, async message passing**
-- Handles the required ~30 ads/min throughput with zero performance impact
-- Can be swapped back to Kafka by replacing the queue with a `kafka-python` producer/consumer with minimal code changes
-
----
-
-## ML Model Decision: GradientBoosting over Logistic Regression
-
-The brief suggested Logistic Regression as a starting point. After evaluating both on the dataset:
-
-| Model | AUC-ROC | Accuracy | F1 Score |
-|---|---|---|---|
-| Logistic Regression | ~0.58 | ~61% | ~0.38 |
-| **GradientBoostingClassifier** | **~0.69** | **~73%** | **~0.43** |
-
-GradientBoosting was chosen for its significantly better performance on the imbalanced dataset (73% No-Click vs 27% Click). It also naturally handles non-linear feature interactions like `bid_price × device` and `category × position` which are critical signals in CTR prediction.
-
----
-
-## Tech Stack
-
-### Backend
-| Component | Tool | Purpose |
-|---|---|---|
-| API Server | FastAPI 0.115.0 + Uvicorn 0.32.0 | HTTP + WebSocket endpoints |
-| ML Model | scikit-learn 1.5.2 (GradientBoostingClassifier) | CTR prediction |
-| Data Processing | pandas 2.2.3, numpy, joblib 1.4.2 | Feature engineering + serialization |
-| Async Pipeline | asyncio.Queue | Producer-consumer (Kafka fallback) |
-| Dataset | ad_logs.csv (1000 synthetic rows) | age, device, category → click (0/1) |
-
-### Frontend
-| Component | Tool | Purpose |
-|---|---|---|
-| Build Tool | Vite 5.2.0 | Fast dev server |
-| UI | React 18.2.0 + TailwindCSS 3.4.13 | Live dashboard |
-| Charts | recharts 3.8.1 | CTR trend line chart |
-| Fonts | Rajdhani, Share Tech Mono | Monospace dashboard UI |
+> **Kafka → asyncio.Queue pivot:** The brief called for Apache Kafka. After hitting Docker/port issues past the 20-minute threshold, I pivoted to Python's built-in `asyncio.Queue` (Fallback B). The producer/consumer contract is identical — only the queue transport layer changed.
 
 ---
 
@@ -66,119 +37,168 @@ GradientBoosting was chosen for its significantly better performance on the imba
 
 ```
 echoad/
-├── README.md
 ├── backend/
-│   ├── main.py            # FastAPI app + lifespan (starts producer/consumer)
-│   ├── producer.py        # Generates fake ad requests → queue every 2s
-│   ├── consumer.py        # queue → ML predict → WebSocket broadcast
-│   ├── utils.py           # predict_ctr() inference function
-│   ├── model.py           # Train & save GradientBoostingClassifier
-│   ├── generate_data.py   # Creates ad_logs.csv (1000 synthetic rows)
-│   ├── metrics.py         # Standalone model evaluation script
-│   ├── ad_logs.csv        # Training data (regenerate via generate_data.py)
-│   ├── model.pkl          # Trained model (regenerate via model.py)
-│   ├── encoder.pkl        # LabelEncoders (regenerate via model.py)
+│   ├── main.py            # FastAPI — WebSocket, HTTP routes, lifespan manager
+│   ├── producer.py        # Generates fake ad requests every 2s → queue
+│   ├── consumer.py        # Reads queue → ML score → broadcast to clients
+│   ├── utils.py           # predict_ctr() — loads model.pkl, returns score
+│   ├── train_model.py     # Trains Logistic Regression on ad_logs.csv
+│   ├── generate_data.py   # Generates synthetic ad_logs.csv
+│   ├── model.pkl          # Serialised trained model (auto-generated)
+│   ├── ad_logs.csv        # Training data (auto-generated)
 │   └── requirements.txt
+│
 └── frontend/
     ├── src/
-    │   ├── App.jsx        # Full dashboard — charts, table, WebSocket
-    │   ├── main.jsx       # React root
-    │   └── index.css
+    │   └── App.jsx        # Entire dashboard — hook, charts, table, toasts
     ├── index.html
     ├── vite.config.js
-    ├── tailwind.config.js
+    ├── vercel.json        # SPA fallback for Vercel
     └── package.json
 ```
 
-> **Note:** `model.pkl`, `encoder.pkl`, and `ad_logs.csv` are not committed to the repo.
-> Generate them locally by following the Quick Start steps below.
+---
+
+## Tech Stack
+
+| Layer | Technology | Deployed On |
+|---|---|---|
+| Frontend | React 18, Vite, Recharts | Vercel |
+| Backend | FastAPI, Python 3.11 | Render |
+| ML Model | Scikit-Learn, Logistic Regression | Render (model.pkl) |
+| Messaging | Python asyncio.Queue | In-process |
+| Real-time | Native WebSockets | Render |
 
 ---
 
-## Quick Start
+## Local Setup
 
-### 1. Backend
+### Backend
 
 ```bash
-cd echoad/backend
+cd backend
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Step 1 — Generate synthetic training data
+# Generate training data
 python generate_data.py
-# → creates ad_logs.csv (1000 rows)
 
-# Step 2 — Train and save the model
-python model.py
-# → creates model.pkl + encoder.pkl
+# Train the ML model → saves model.pkl
+python train_model.py
 
-# Step 3 — Start the API server
-uvicorn main:app --reload --port 8000
-# API  → http://localhost:8000
-# WS   → ws://localhost:8000/ws
-# Health → http://localhost:8000/health
-# Stats  → http://localhost:8000/stats
+# Start the server
+uvicorn main:app --host 0.0.0.0 --port 10000 --reload
 ```
 
-### 2. Frontend (new terminal)
-
-```bash
-cd echoad/frontend
-npm install
-npm run dev
-# Dashboard → http://localhost:5173
-```
+Backend runs at `http://localhost:10000`
 
 ---
 
-## ML Model Details
+### Frontend
 
-- **Algorithm:** GradientBoostingClassifier (400 trees, learning rate 0.05)
-- **Features:** 14 engineered features including:
-  - Age buckets (18-24, 25-34, 35-44, 45-54, 55+)
-  - Device × category interactions (`bid_x_mobile`, `highcat_x_top`, `mobile_x_highcat`)
-  - One-hot encoded device, category, region, position
-- **Target:** `click` (0 = no click, 1 = click)
-- **Class imbalance handling:** sqrt-scaled sample weights (~1.64x for click class)
-- **Threshold tuning:** Optimised for F1 with minimum 40% precision floor
-- **Performance:** AUC ~0.69 (5-fold CV, std 0.03), Accuracy ~73%
+```bash
+cd frontend
 
-### Value Tiers (as per brief)
-| Tier | CTR Score | Dashboard |
+# Install dependencies
+npm install
+
+# Start dev server
+npm run dev
+```
+
+Frontend runs at `http://localhost:5173`
+
+---
+
+## ML Model
+
+- **Dataset:** Synthetic `ad_logs.csv` generated by `generate_data.py` with features: `age`, `device_type`, `site_category`, `time_of_day`, and binary target `click`
+- **Model:** Logistic Regression wrapped in a Scikit-Learn `Pipeline` with `OneHotEncoder` for categorical features
+- **Output:** CTR probability score between `0.0` and `1.0`
+- **Serialisation:** `joblib` → `model.pkl`, loaded once at startup by `predict_ctr()`
+
+---
+
+## Backend — Key Design Decisions
+
+### WebSocket with Ping/Pong Keepalive
+Render's infrastructure closes idle WebSocket connections after 30 seconds. The backend responds to every `ping` message from the frontend with a `pong`, keeping the connection alive indefinitely.
+
+```python
+if text == "ping":
+    await websocket.send_text("pong")
+```
+
+### Dead Client Cleanup
+The consumer's `broadcast()` function collects failed clients in a separate `dead` set and removes them after iterating — never mutating a set mid-loop.
+
+```python
+async def broadcast(clients, data):
+    dead = set()
+    for client in clients:
+        try:
+            await client.send_json(data)
+        except Exception:
+            dead.add(client)
+    clients -= dead
+```
+
+### Ring Buffer
+Last 50 processed ads are kept in `app.state.recent_ads` for the `/ads` polling endpoint, so clients that missed messages can catch up.
+
+---
+
+## Frontend — Key Design Decisions
+
+### useWebSocket Hook — Exponential Backoff
+The custom hook auto-reconnects on any unexpected disconnect using exponential backoff (1s → 2s → 4s → … capped at 30s). Render's free tier spins down after inactivity, so this is essential.
+
+### 25s Keepalive Ping
+Frontend sends `"ping"` every 25 seconds — just under Render's 30s idle timeout — to hold the connection open while the dashboard is open.
+
+### Dashboard Panels
+| Panel | Description |
+|---|---|
+| Stats Cards | Total ads, high-value count + %, avg CTR score, auction velocity gauge |
+| CTR Trend Chart | Line chart of last 20 bid scores (Recharts) |
+| Live Feed Table | Scrolling ad table with score badges, filterable by High / Mid / Low |
+| Heatmap | Category × Device ad distribution grid |
+| Toast Alerts | Pop-up notifications for bids scoring > 0.85 |
+
+### Visual Scoring Logic (per brief)
+| CTR Score | Colour | Label |
 |---|---|---|
-| High Value | > 0.70 | 🟢 Green row |
-| Average | 0.30 – 0.70 | ⚪ Default |
-| Low Value | < 0.30 | 🔴 Red row |
+| > 0.70 | 🟢 Green | High Value |
+| 0.30 – 0.70 | ⚪ Grey | Average |
+| < 0.30 | 🔴 Red | Low Value |
 
 ---
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
+| Method | Endpoint | Description |
 |---|---|---|
-| `/ws` | WebSocket | Live ad stream (JSON per ad) |
-| `/health` | GET | Server health check |
-| `/stats` | GET | Total ads, high-value count, error rate, RPM |
+| `GET` | `/` | Backend status, client count, queue size |
+| `GET` | `/health` | Health check |
+| `GET` | `/stats` | Connected clients + queue size |
+| `GET` | `/ads?limit=5` | Last N processed ads (polling fallback) |
+| `WS` | `/ws` | Live WebSocket stream of scored ads |
 
 ---
 
-## Dashboard Features
+## Deployment
 
-- **Live Feed Table** — scrolling ad list, color-coded by CTR tier, per-tier filters
-- **CTR Trend Chart** — recharts line chart, last 20 scores
-- **Heatmap** — category × device click distribution
-- **Metrics Cards** — total ads processed, high/low value counts, avg CTR
-- **Velocity Gauge** — real-time bids per minute
-- **Toast Alerts** — pop-up notifications for high-value bids (score > 0.85)
-- **Auto-reconnect** — exponential backoff on WebSocket disconnect
-- **Demo Mode** — local ad generation if backend is offline (for UI demos)
+| Service | Platform | Trigger |
+|---|---|---|
+| Backend | Render (free tier) | Auto-deploys on `git push` to `main` |
+| Frontend | Vercel (hobby) | Auto-deploys on `git push` to `main` |
+
+**CORS** is locked to `https://echoad.vercel.app` and `http://localhost:5173` in `main.py`.
 
 ---
 
 ## Notes
 
-- Dataset is synthetic — regenerate anytime via `python generate_data.py`
-- No database required — pure in-memory streaming pipeline
-- Model performance varies slightly per run due to random data generation (no fixed seed in `generate_data.py`)
-- With 1000 training rows, CV std of ~0.03 is expected and normal
+- Render free tier has a ~30s cold start when the service has been idle — the frontend will show **CONNECTING…** during this time and auto-connect once the backend is ready
+- Demo Mode (▶ Demo Mode button) generates fake ads client-side so the dashboard is always demonstrable even if the backend is cold
