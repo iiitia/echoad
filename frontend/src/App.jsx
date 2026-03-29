@@ -9,9 +9,7 @@ import {
   Tooltip
 } from 'recharts'
 // ─── WebSocket URL ─────────────────────────────────────────
-const wsUrl = import.meta.env?.VITE_WS_URL
-  || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
-
+const WS_URL = "wss://echoad.onrender.com/ws";
 // ─── WebSocket hook ───────────────────────────────────────
 function useWebSocket(url, onMessage) {   // ✅ FIXED (proper function)
   const [status, setStatus] = useState('disconnected')
