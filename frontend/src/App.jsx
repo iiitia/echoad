@@ -402,12 +402,16 @@ export default function App() {
     return ads
   }, [ads, filter])
 
-  const chartData = useMemo(() =>
-    ads.slice(0, 20).reverse().map(ad => ({
-      timestamp: new Date(ad.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      score: ad.score ?? 0
-    }))
-  , [ads])
+ const chartData = useMemo(() =>
+  ads.slice(0, 20).reverse().map(ad => ({
+    timestamp: new Date(ad.timestamp).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'   // ✅ FIX
+    }),
+    score: ad.score ?? 0
+  }))
+, [ads])
 
   const tableAds = useMemo(() =>
     showHighValue
