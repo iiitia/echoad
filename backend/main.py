@@ -81,8 +81,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            # Keep connection alive (no forced receive)
-            await asyncio.sleep(1)
+            # keep connection alive by receiving ping
+            await websocket.receive_text()
 
     except WebSocketDisconnect:
         print("[INFO] Client disconnected")
