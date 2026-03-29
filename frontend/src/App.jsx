@@ -11,7 +11,7 @@ import {
 // ─── WebSocket URL ─────────────────────────────────────────
 const WS_URL = "wss://echoad.onrender.com/ws";
 // ─── WebSocket hook ───────────────────────────────────────
-function useWebSocket(url, onMessage) {   // ✅ FIXED (proper function)
+function useWebSocket(url, onMessage) {  
   const [status, setStatus] = useState('disconnected')
   const wsRef = useRef(null)
   const retryRef = useRef(null)
