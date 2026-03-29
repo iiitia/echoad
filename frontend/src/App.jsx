@@ -8,8 +8,10 @@ import {
   ResponsiveContainer,
   Tooltip
 } from 'recharts'
+
 // ─── WebSocket URL ─────────────────────────────────────────
-const ws = new WebSocket("wss://echoad.onrender.com/ws");
+const WS_URL = "wss://echoad.onrender.com/ws";
+
 // ─── WebSocket hook ───────────────────────────────────────
 function useWebSocket(url, onMessage) {  
   const [status, setStatus] = useState('disconnected')
@@ -23,14 +25,14 @@ function useWebSocket(url, onMessage) {
 
     setStatus('connecting');
 
-    console.log("🔌 Connecting to:", url);
+    console.log("Connecting...");
 
     try {
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log("✅ Connected");
+        console.log("Connected");
         setStatus('connected');
         retryCount.current = 0;
 
@@ -51,8 +53,9 @@ function useWebSocket(url, onMessage) {
       };
 
       ws.onclose = () => {
-        console.log("🔌 Disconnected");
+        console.log("Disconnected");
         setStatus('disconnected');
+        clearInterval(pingRef.current);
       };
 
       ws.onerror = (err) => {
