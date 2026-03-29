@@ -4,31 +4,34 @@ sys.stdout.reconfigure(encoding='utf-8')
 import os
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-
 from producer import producer
 from consumer import consumer
-
-# ── Shared state ──────────────────────────────────────────────
-queue = asyncio.Queue()
-clients = set()
 
 # ── Lifespan (startup / shutdown) ─────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    producer_task = asyncio.create_task(producer(queue))
-    consumer_task = asyncio.create_task(consumer(queue, clients))
+    # Move shared state into app.state to avoid module-level event loop issues
+    app.state.queue = asyncio.Queue()
+    app.state.clients = set()
 
-    print("✅ Backend started (Render-ready)")
+    producer_task = asyncio.create_task(producer(app.state.queue))
+    consumer_task = asyncio.create_task(consumer(app.state.queue, app.state.clients))
+
+    print("✅ Backend started")
     print("🌐 WebSocket endpoint: /ws")
 
     yield
 
     print("🛑 Backend shutting down...")
-
     producer_task.cancel()
     consumer_task.cancel()
+
+    try:
+        await asyncio.gather(producer_task, consumer_task, return_exceptions=True)
+    except Exception:
+        pass
 
 # ── App ───────────────────────────────────────────────────────
 app = FastAPI(
@@ -47,61 +50,62 @@ app.add_middleware(
 
 # ── HTTP Routes ───────────────────────────────────────────────
 @app.get("/")
-async def root():
+async def root(request: Request):
     return {
         "status": "running",
         "message": "EchoAd Backend is live",
         "websocket": "/ws",
-        "clients": len(clients),
-        "queue": queue.qsize(),
+        "clients": len(request.app.state.clients),
+        "queue": request.app.state.queue.qsize(),
     }
 
 @app.get("/health")
-async def health():
+async def health(request: Request):
     return {
         "status": "ok",
-        "connected_clients": len(clients),
-        "queue_size": queue.qsize(),
+        "connected_clients": len(request.app.state.clients),
+        "queue_size": request.app.state.queue.qsize(),
     }
 
 @app.get("/stats")
-async def stats():
+async def stats(request: Request):
     return {
-        "connected_clients": len(clients),
-        "queue_size": queue.qsize(),
+        "connected_clients": len(request.app.state.clients),
+        "queue_size": request.app.state.queue.qsize(),
     }
 
-# ── WebSocket (FIXED + KEEP ALIVE) ────────────────────────────
+# ── WebSocket ─────────────────────────────────────────────────
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    clients.add(websocket)
+    websocket.app.state.clients.add(websocket)
+    clients = websocket.app.state.clients
 
-    print(f"✅ Client connected | Total: {len(clients)}")
+    print(f"[INFO] Client connected | Total: {len(clients)}")
 
     try:
         while True:
-            data = await websocket.receive_text()
-
-            # 🔥 Handle keep-alive ping
-            if data == "ping":
-                await websocket.send_text("pong")
+            # receive() handles text, binary, ping/pong, and disconnect
+            # without crashing on non-text frames like receive_text() does
+            data = await websocket.receive()
+            if data["type"] == "websocket.disconnect":
+                break
 
     except WebSocketDisconnect:
-        print("❌ Client disconnected")
+        print("[INFO] Client disconnected normally")
 
     except Exception as e:
         print(f"[ERROR] WebSocket error: {type(e).__name__}: {e}")
 
     finally:
         clients.discard(websocket)
-        print(f"🧹 Client removed | Total: {len(clients)}")
+        print(f"[INFO] Client removed | Total: {len(clients)}")
 
-# ── Entry point (Render compatible) ───────────────────────────
+# ── Entry point ───────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("PORT", 10000))  # Render uses $PORT
+    port = int(os.environ.get("PORT", 10000))
 
     uvicorn.run(
         "main:app",
