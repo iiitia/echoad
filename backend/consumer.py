@@ -2,8 +2,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from utils import predict_ctr  
-
+from backend.utils import predict_ctr
 # ── Logging setup ─────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
