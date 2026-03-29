@@ -38,7 +38,10 @@ app = FastAPI(title="EchoAd - Real-Time Ad Bidding Simulator", lifespan=lifespan
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://echoad.vercel.app",        # ✅ production frontend
+        "http://localhost:5173",             # ✅ local dev
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,8 +51,8 @@ app.add_middleware(
 @app.get("/")
 async def root(request: Request):
     return {
-        "status":   "running",
-        "message":  "EchoAd Backend is live",
+        "status":    "running",
+        "message":   "EchoAd Backend is live",
         "websocket": "/ws",
         "polling":   "/ads",
         "clients":   len(request.app.state.clients),
