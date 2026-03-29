@@ -9,7 +9,7 @@ import {
   Tooltip
 } from 'recharts'
 // ─── WebSocket URL ─────────────────────────────────────────
-const WS_URL = "wss://echoad.onrender.com/ws";
+const ws = new WebSocket("wss://echoad.onrender.com/ws");
 // ─── WebSocket hook ───────────────────────────────────────
 function useWebSocket(url, onMessage) {  
   const [status, setStatus] = useState('disconnected')
