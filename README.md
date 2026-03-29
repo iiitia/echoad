@@ -2,7 +2,7 @@
 
 A full-stack real-time ad bidding pipeline built for the EchoAd technical assessment. Fake ad requests are generated every 2 seconds, scored by a Scikit-Learn ML model, and streamed live to a React dashboard via WebSockets.
 
-🔗 **Live Frontend:** [echoad.vercel.app](https://echoad-2nq32ne9z-iiitias-projects.vercel.app/)  
+🔗 **Live Frontend:** [echoad.vercel.app](https://echoad.vercel.app/)  
 🔗 **Backend API:** [echoad.onrender.com](https://echoad.onrender.com)  
 🔗 **WebSocket:** `wss://echoad.onrender.com/ws`
 
