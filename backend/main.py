@@ -7,8 +7,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from producer import producer
-from consumer import consumer
+from backend.producer import producer
+from backend.consumer import consumer
 
 # ── Shared state ──────────────────────────────────────────────
 queue = asyncio.Queue()
